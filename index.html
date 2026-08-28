@@ -145,6 +145,7 @@ main { max-width: 1260px; margin: 0 auto; padding: 28px 24px 90px; }
 }
 .chip.long { color: var(--long); border-color: #b9e4d0; background: var(--long-soft); }
 .chip.short { color: var(--short); border-color: #f4c2c8; background: var(--short-soft); }
+.chip.warn { color: var(--amber-bright); border-color: #f3d9b0; background: rgba(217,119,6,.08); }
 .chip.wait { color: var(--wait); border-color: #ecd3a8; background: var(--wait-soft); }
 .chip.neutral { color: var(--ink-2); }
 
@@ -601,6 +602,8 @@ details.explain .body { margin-top: 8px; font-size: 13px; color: var(--ink-2); l
     <div style="display:flex; gap:14px; flex-wrap:wrap; align-items:end">
       <label class="fld" style="width:180px"><span>Capital inicial (USDT)</span><input type="number" id="ppCapital" value="1000" step="any"></label>
       <label class="fld" style="width:180px"><span>Riesgo por operación (%)</span><input type="number" id="ppRisk" value="1" step="0.1" min="0.1" max="5"></label>
+      <label class="switch" style="height:38px" title="Tras cobrar TP1, el stop persigue al precio a 1.2R del máximo alcanzado: deja correr al ganador y protege lo ganado. Modelo estadístico de salida — recomendado.">
+        <input type="checkbox" id="ppTrail" checked><span class="sl-track"></span><span class="tiny" style="font-weight:600">Trailing tras TP1</span></label>
       <button class="btn ghost sm" id="ppSave" style="height:38px">Guardar</button>
       <button class="btn ghost sm" id="ppReset" style="height:38px; color:var(--short); border-color:#f4c2c8">Reiniciar cuenta</button>
       <div class="tiny" style="flex:1; min-width:200px">Gestión automática: al tocar TP1 se cierra la mitad y el stop sube a tu precio de entrada (ya no puedes perder). El resto busca TP2.</div>
@@ -932,6 +935,43 @@ details.explain .body { margin-top: 8px; font-size: 13px; color: var(--ink-2); l
     <div class="tiny section-gap">Cómo ejecuta (v1): compra a mercado + orden OCO con TP1 y Stop Loss — la propia testnet gestiona la salida aunque cierres la app. Diferencias con la práctica: sin salidas parciales (todo sale en TP1 o SL) y los SHORT no se ejecutan en spot (quedan solo en práctica). El modo con dinero real no existe en esta versión: se construirá cuando tu historial muestre 30+ operaciones con profit factor ≥ 1.3.</div>
   </div>
 
+  <!-- ================= MODO TURBO (alto riesgo, 20x simulado) ================= -->
+  <div class="panel section-gap" style="border:2px solid #f3d9b0; background:linear-gradient(180deg, rgba(217,119,6,.045), transparent 120px)">
+    <h3>🔥 Modo Turbo · alto riesgo controlado <span id="tbChip"></span></h3>
+    <p class="tiny" style="margin-bottom:12px">
+      Un segundo motor, más ágil y agresivo, con su <b>propia bolsa de capital simulado</b> separada de la cuenta de práctica.
+      Opera futuros simulados a <b>20x</b> con matemática real: precio de liquidación, comisiones taker y regla asimétrica —
+      <b>si la operación no muestra profit rápido, se cierra; si lo muestra, se queda</b> con un trailing que persigue la ganancia.
+      Escanea cada 3 minutos con horizonte scalping. Su <b>Guardián Turbo</b> es más estricto que el normal, porque a 20x un movimiento de −5% liquida la posición completa.
+    </p>
+    <div id="tbGuardBanner"></div>
+    <div class="grid g2">
+      <div>
+        <div class="grid g2">
+          <label class="fld"><span>Bolsa Turbo (USDT simulados)</span><input type="number" id="tbPot" value="200" step="any"></label>
+          <label class="fld"><span>Margen por operación</span>
+            <select id="tbMarginPct"><option value="10">10% de la bolsa</option><option value="20" selected>20% de la bolsa</option><option value="30">30% de la bolsa</option></select></label>
+          <label class="fld"><span>Score mínimo</span>
+            <select id="tbMinScore"><option>72</option><option selected>75</option><option>78</option></select></label>
+          <label class="fld"><span>Sin profit en…</span>
+            <select id="tbScratchMin"><option value="30">30 min → se cierra</option><option value="45" selected>45 min → se cierra</option><option value="60">60 min → se cierra</option></select></label>
+        </div>
+        <label class="switch" style="margin-top:6px"><input type="checkbox" id="tbToggle"><span class="sl-track"></span><span style="font-weight:700; font-size:14px">Encender Modo Turbo</span></label>
+        <div class="tiny section-gap">Guardián Turbo (fijo): pérdida máx. diaria <b>30% de la bolsa</b> · máx <b>10 ops/día</b> · máx <b>2 posiciones</b> · pausa tras <b>4 pérdidas seguidas</b> · SL nunca más lejos del 1.2% (a 20x = 24% del margen).</div>
+      </div>
+      <div>
+        <div class="grid g2" id="tbStats"></div>
+        <div id="tbPositions" class="section-gap"></div>
+      </div>
+    </div>
+    <div class="divider"></div>
+    <details><summary style="cursor:pointer; font-weight:700; font-size:13.5px">📜 Historial Turbo y bitácora</summary>
+      <div class="tbl-wrap section-gap"><table id="tbHistTbl"><thead><tr><th>Fecha</th><th>Par</th><th>Dir</th><th class="num">Margen</th><th>Salida</th><th class="num">PnL</th></tr></thead><tbody></tbody></table></div>
+      <div id="tbLog" style="max-height:200px; overflow-y:auto" class="section-gap"></div>
+    </details>
+    <div class="alert section-gap">⚠️ <div><b>Léelo una vez, en serio:</b> el Turbo existe para <b>probar</b> si el modelo aguanta apalancamiento extremo — con dinero simulado. A 20x, la mayoría de las cuentas reales mueren por liquidación, no por malas señales. Si tras 30+ operaciones Turbo el resultado es consistentemente positivo, hablamos de siguiente paso; si es negativo, el Turbo habrá hecho su trabajo: mostrártelo gratis.</div></div>
+  </div>
+
   <div class="panel section-gap">
     <h3>Bitácora de decisiones <span class="h-note">todo lo que el motor hace, con hora y motivo</span></h3>
     <div id="autoLogBox" style="max-height:340px; overflow-y:auto"></div>
@@ -966,6 +1006,9 @@ details.explain .body { margin-top: 8px; font-size: 13px; color: var(--ink-2); l
       <div class="divider"></div>
       <h3 style="margin-bottom:8px">Rendimiento por horario</h3>
       <div id="ctrlHours"></div>
+      <div class="divider"></div>
+      <h3 style="margin-bottom:8px">🎯 Calibración del score <span class="h-note">¿los scores altos ganan de verdad más?</span></h3>
+      <div id="ctrlCalib"></div>
     </div>
   </div>
 
@@ -1014,6 +1057,7 @@ details.explain .body { margin-top: 8px; font-size: 13px; color: var(--ink-2); l
         <button class="btn good sm" id="rpPlay">▶ Reproducir</button>
         <button class="btn ghost sm" id="rpPause">⏸ Pausa</button>
         <button class="btn ghost sm" id="rpStepBtn">⏭ Una vela</button>
+        <button class="btn sm" id="rpRunAll">⏩ Simular todo el período</button>
         <label class="fld" style="width:130px; margin-bottom:0"><span>Velocidad</span>
           <select id="rpSpeed"><option value="1">1x</option><option value="4" selected>4x</option><option value="10">10x</option><option value="50">50x</option></select></label>
         <div class="progress" style="flex:1; min-width:160px"><div class="p-fill" id="rpProg" style="width:0%"></div></div>
@@ -1023,6 +1067,29 @@ details.explain .body { margin-top: 8px; font-size: 13px; color: var(--ink-2); l
     <div class="panel section-gap">
       <h3>Lo que el motor va decidiendo</h3>
       <div id="rpFeed" style="max-height:260px; overflow-y:auto"><span class="tiny">—</span></div>
+    </div>
+
+    <!-- Informe de simulación -->
+    <div id="rpReport" class="section-gap" style="display:none">
+      <div class="panel">
+        <h3>📋 Informe de la simulación <span class="h-note">— qué habría hecho el motor en este período, con su modelo matemático completo</span></h3>
+        <div id="rpRepChips" class="grid g4" style="margin-bottom:14px"></div>
+        <div class="grid g2">
+          <div>
+            <h3 style="font-size:13.5px">Resultado acumulado (en R)</h3>
+            <div class="chart-box"><canvas id="rpEquity" style="width:100%; height:180px; display:block"></canvas></div>
+          </div>
+          <div>
+            <h3 style="font-size:13.5px">Por estrategia</h3>
+            <div class="tbl-wrap"><table id="rpSetupTbl"><thead><tr><th>Estrategia</th><th class="num">Ops</th><th class="num">Aciertos</th><th class="num">R neto</th></tr></thead><tbody></tbody></table></div>
+          </div>
+        </div>
+        <div id="rpVerdict" class="section-gap"></div>
+      </div>
+      <div class="panel section-gap">
+        <h3>Registro de operaciones <span class="h-note">entrada → salida, una por una</span></h3>
+        <div class="tbl-wrap"><table id="rpTradeTbl"><thead><tr><th>Entrada</th><th>Dir</th><th>Estrategia</th><th class="num">Score</th><th class="num">Precio in</th><th class="num">Precio out</th><th>Salida</th><th class="num">Duración</th><th class="num">R</th></tr></thead><tbody></tbody></table></div>
+      </div>
     </div>
   </div>
 </section>
@@ -3179,7 +3246,11 @@ const Paper = (() => {
         }
       } else {
         const tick = await spotGet(`/api/v3/ticker/price?symbol=${pr.sym}`);
-        mkt = +tick.price;
+        mkt = +(Array.isArray(tick) ? (tick.find(x => x.symbol === pr.sym) || {}).price : tick.price);
+      }
+      if (!isFinite(mkt) || mkt <= 0) {
+        toast(`No se pudo obtener el precio de ${pr.sym}: la propuesta queda pendiente.`, 'red');
+        return;
       }
       const sign = pr.dir === 'LONG' ? 1 : -1;
       // validaciones básicas
@@ -3278,10 +3349,18 @@ const Paper = (() => {
       closePart(pos, pos.qtyOpen, price * (1 - sign * SLIP), 'Cierre por tiempo (tesis expirada)');
       return;
     }
+    // Trailing dinámico tras TP1 (si está activado): el stop persigue al precio
+    // a 1.2R del extremo favorable — deja correr al ganador, protege lo ganado.
+    if (pos.partial && store.get('atalaya_trail') !== '0') {
+      const rd = Math.abs(pos.entry - (pos.slOrig != null ? pos.slOrig : pos.sl)) || 1e-9;
+      const trail = sign === 1 ? pos.hiSince - 1.2 * rd : pos.loSince + 1.2 * rd;
+      if (sign * (trail - pos.sl) > 0) pos.sl = trail;
+    }
     // Stop (con deslizamiento adverso)
     if (sign * (price - pos.sl) <= 0) {
       const fillP = pos.sl * (1 - sign * SLIP);
-      const reason = pos.partial ? 'Breakeven (SL en entrada)' : 'Stop Loss';
+      const trailed = pos.partial && sign * (pos.sl - pos.entry) > 0;
+      const reason = trailed ? 'Trailing stop (ganancia protegida)' : pos.partial ? 'Breakeven (SL en entrada)' : 'Stop Loss';
       closePart(pos, pos.qtyOpen, fillP, reason);
       return;
     }
@@ -3332,8 +3411,9 @@ const Paper = (() => {
         px = +q.data[pos.sym].close;
       } else {
         const tick = await spotGet(`/api/v3/ticker/price?symbol=${pos.sym}`);
-        px = +tick.price;
+        px = +(Array.isArray(tick) ? (tick.find(x => x.symbol === pos.sym) || {}).price : tick.price);
       }
+      if (!isFinite(px) || px <= 0) throw new Error('precio no disponible');
       const sign = pos.dir === 'LONG' ? 1 : -1;
       closePart(pos, pos.qtyOpen, px * (1 - sign * SLIP), 'Cierre manual');
       save(); renderAll();
@@ -3626,6 +3706,14 @@ $('#ppReset').addEventListener('click', () => {
   const s = Paper.settings();
   $('#ppCapital').value = s.capital;
   $('#ppRisk').value = s.riskPct;
+  const tr = $('#ppTrail');
+  if (tr) {
+    tr.checked = store.get('atalaya_trail') !== '0';
+    tr.addEventListener('change', () => {
+      store.set('atalaya_trail', tr.checked ? '1' : '0');
+      toast(tr.checked ? 'Trailing tras TP1 activado: los ganadores corren con el stop persiguiéndolos.' : 'Trailing desactivado: se vuelve al TP2 fijo con breakeven.', 'blue');
+    });
+  }
 })();
 
 // watcher de posiciones cada 30 s
@@ -4450,6 +4538,7 @@ async function autoScanOnce(manual = false) {
 function autoStart() {
   guardReset();
   AUTO.running = true;
+  store.set('atalaya_auto_on', '1');
   if (AUTO.timer) clearInterval(AUTO.timer);
   AUTO.timer = setInterval(() => autoScanOnce(), AUTO.cfg.intervalMin * 60000);
   if (AUTO.guardTimer) clearInterval(AUTO.guardTimer);
@@ -4460,6 +4549,7 @@ function autoStart() {
 }
 function autoStop() {
   AUTO.running = false;
+  store.set('atalaya_auto_on', '0');
   if (AUTO.timer) clearInterval(AUTO.timer);
   if (AUTO.guardTimer) clearInterval(AUTO.guardTimer);
   AUTO.timer = AUTO.guardTimer = null;
@@ -4535,6 +4625,20 @@ $('#autoScanNow').addEventListener('click', () => autoScanOnce(true));
 document.querySelectorAll('nav button').forEach(b => b.addEventListener('click', () => {
   if (b.dataset.view === 'autonoma') { renderAutoStatus(); renderAutoLog(); }
 }));
+// ---------------- Persistencia del motor: sobrevive a recargas ----------------
+// Si el motor estaba activo al recargar la página, se reanuda solo. Los
+// contadores del Guardián ya viven en localStorage (atalaya_automode), así
+// que el límite diario NO se reinicia con un F5.
+if (store.get('atalaya_auto_on') === '1') {
+  setTimeout(() => {
+    if (!AUTO.running) {
+      autoStart();
+      autoLog('🔄 Motor reanudado automáticamente tras recargar la página (nada se perdió: posiciones, historial y contadores del día están guardados).', 'up');
+      try { toast('🤖 Motor autónomo reanudado tras la recarga.', 'green'); } catch (e) { }
+    }
+  }, 2500);
+}
+
 window.AutoMode = { start: autoStart, stop: autoStop, scanOnce: autoScanOnce, state: () => AUTO, guardEvaluate, dayStats: autoDayStats };
 </script>
 <script>
@@ -4916,6 +5020,29 @@ function renderCtrlCharts() {
     <thead><tr><th>Hora de cierre</th><th class="num">Ops</th><th class="num">PnL neto</th></tr></thead>
     <tbody>${hrRows.slice(0, 8).map(r => `<tr><td class="num">${String(r.hr).padStart(2, '0')}:00–${String(r.hr).padStart(2, '0')}:59</td><td class="num">${r.n}</td><td class="num ${r.net >= 0 ? 'up' : 'down'}">${r.net >= 0 ? '+' : ''}$${r.net.toFixed(2)}</td></tr>`).join('')}</tbody></table></div>
     <div class="tiny section-gap">Hora local de Chile. Con pocas operaciones por franja, esto es orientativo.</div>` : '<span class="tiny">Se llenará con el historial.</span>';
+
+  // ---- Calibración empírica del score: bucket → % acierto y R promedio ----
+  const calBox = $('#ctrlCalib');
+  if (calBox) {
+    const withScore = h.filter(t => t.score != null && t.r != null);
+    if (withScore.length < 12) {
+      calBox.innerHTML = `<span class="tiny">Con ${withScore.length} operaciones aún no se puede calibrar (mínimo 12). Cuando haya muestra, esta tabla te dirá si un score 75 gana de verdad más que un 68 — la prueba empírica del modelo con TUS datos.</span>`;
+    } else {
+      const buckets = [[0, 67, '&lt; 68'], [68, 72, '68–72'], [73, 77, '73–77'], [78, 101, '78+']];
+      const rows = buckets.map(([lo2, hi2, lbl]) => {
+        const arr = withScore.filter(t => t.score >= lo2 && t.score <= hi2);
+        if (!arr.length) return null;
+        const w = arr.filter(t => t.r > 0).length;
+        const avgR = arr.reduce((a, t) => a + t.r, 0) / arr.length;
+        return { lbl, n: arr.length, wr: w / arr.length * 100, avgR };
+      }).filter(Boolean);
+      const monotone = rows.length >= 2 && rows[rows.length - 1].avgR > rows[0].avgR;
+      calBox.innerHTML = `<div class="tbl-wrap"><table class="tf-table">
+        <thead><tr><th>Score del setup</th><th class="num">Ops</th><th class="num">% acierto</th><th class="num">R promedio</th></tr></thead>
+        <tbody>${rows.map(r => `<tr><td class="num">${r.lbl}</td><td class="num">${r.n}${r.n < 8 ? ' ⚠' : ''}</td><td class="num">${r.wr.toFixed(0)}%</td><td class="num ${r.avgR >= 0 ? 'up' : 'down'}">${r.avgR >= 0 ? '+' : ''}${r.avgR.toFixed(2)}</td></tr>`).join('')}</tbody></table></div>
+        <div class="tiny section-gap">${monotone ? '✅ Los scores altos rinden más que los bajos en tu historial: el modelo discrimina — es evidencia (no prueba) de que el score contiene información real.' : 'ℹ️ Por ahora los scores altos NO rinden claramente más: con muestra chica es normal; si persiste con 50+ operaciones, habría que subir el umbral de entrada.'} ⚠ = menos de 8 ops, no concluyente.</div>`;
+    }
+  }
 }
 
 // ---------------- Posiciones: lo que el motor está viendo ----------------
@@ -5162,6 +5289,7 @@ async function replayLoad() {
     if (RPL.timer) clearInterval(RPL.timer);
     $('#rpStatus').innerHTML = '';
     $('#rpStage').style.display = 'block';
+    const rep = $('#rpReport'); if (rep) rep.style.display = 'none';
     replayLog(`Replay cargado: ${sym} ${tfSel}, ${kl.length} velas (${new Date(kl[0].t).toLocaleDateString('es-CL')} → hoy). Pulsa ▶.`);
     replayRender();
   } catch (e) {
@@ -5172,12 +5300,13 @@ async function replayLoad() {
 function replayLog(msg, cls = '') {
   const el = $('#rpFeed');
   RPL.events.unshift({ msg, cls });
+  if (RPL.fast) return;
   RPL.events = RPL.events.slice(0, 30);
   if (el) el.innerHTML = RPL.events.map(e => `<div class="tiny" style="padding:3px 0; border-bottom:1px solid var(--line-2)"><span class="${e.cls}">${e.msg}</span></div>`).join('');
 }
 
 function replayStep() {
-  if (RPL.i >= RPL.kl.length - 1) { replayPause(); replayLog('🏁 Fin del replay. PnL total: ' + (RPL.pnlR >= 0 ? '+' : '') + RPL.pnlR.toFixed(2) + 'R en ' + RPL.trades.length + ' operaciones.', RPL.pnlR >= 0 ? 'up' : 'down'); return; }
+  if (RPL.i >= RPL.kl.length - 1) { replayPause(); replayLog('🏁 Fin del replay. PnL total: ' + (RPL.pnlR >= 0 ? '+' : '') + RPL.pnlR.toFixed(2) + 'R en ' + RPL.trades.length + ' operaciones.', RPL.pnlR >= 0 ? 'up' : 'down'); if (!RPL.fast) replayReport(true); return; }
   RPL.i++;
   const i = RPL.i;
   const k = RPL.kl[i];
@@ -5186,34 +5315,49 @@ function replayStep() {
   // gestión de posición abierta (con high/low de la vela; SL primero: conservador)
   if (RPL.pos) {
     const p = RPL.pos, sign = p.dir === 'LONG' ? 1 : -1;
+    const riskDist = Math.abs(p.entry - p.slOrig) || 1e-9;
+    // seguimiento del extremo favorable (para trailing y MFE)
+    p.hi = Math.max(p.hi != null ? p.hi : p.entry, k.h);
+    p.lo = Math.min(p.lo != null ? p.lo : p.entry, k.l);
+    const closeTrade = (exitPx, reason, r) => {
+      RPL.pnlR += (r - (p.bankedR || 0)); // lo bancado ya se sumó en TP1
+      RPL.trades.push({
+        i, r, dir: p.dir, setup: p.setup || '—', score: p.score || null,
+        entry: p.entry, exit: exitPx, reason,
+        tIn: RPL.kl[p.openedI].t, tOut: k.t, bars: i - p.openedI,
+        mfeR: sign === 1 ? (p.hi - p.entry) / riskDist : (p.entry - p.lo) / riskDist,
+      });
+      RPL.pos = null;
+    };
     const hitSL = sign === 1 ? k.l <= p.sl : k.h >= p.sl;
     const hitTP1 = sign === 1 ? k.h >= p.tp1 : k.l <= p.tp1;
     const hitTP2 = sign === 1 ? k.h >= p.tp2 : k.l <= p.tp2;
     if (hitSL) {
-      const r = p.partial ? 0.5 * (p.tp1R || 1) : -1;
-      RPL.pnlR += p.partial ? 0 : -1;
-      t(`🔴 ${p.partial ? 'Breakeven' : 'STOP LOSS'} en ${p.dir} ${RPL.sym} @ ${fmtPrice(p.sl)} ${p.partial ? '' : '(−1R)'}`, 'down');
-      RPL.trades.push({ i, r: p.partial ? p.bankedR : -1 });
-      RPL.markers.push({ i, y: p.sl, type: 'exit', txt: p.partial ? 'BE' : '-1R' });
-      RPL.pos = null;
+      const trailed = p.partial && sign * (p.sl - p.entry) > 0;
+      const rSL = p.partial ? (p.bankedR || 0) + 0.5 * sign * (p.sl - p.entry) / riskDist : -1;
+      t(`🔴 ${trailed ? 'TRAILING STOP' : p.partial ? 'Breakeven' : 'STOP LOSS'} en ${p.dir} ${RPL.sym} @ ${fmtPrice(p.sl)} (${rSL >= 0 ? '+' : ''}${rSL.toFixed(2)}R)`, rSL >= 0 ? 'up' : 'down');
+      RPL.markers.push({ i, y: p.sl, type: rSL >= 0 ? 'tp' : 'exit', txt: trailed ? 'TRAIL' : p.partial ? 'BE' : '-1R' });
+      closeTrade(p.sl, trailed ? 'Trailing stop' : p.partial ? 'Breakeven' : 'Stop loss', rSL);
     } else if (!p.partial && hitTP1) {
       p.partial = true;
-      p.bankedR = Math.abs(p.tp1 - p.entry) / Math.abs(p.entry - p.sl) / 2;
+      p.bankedR = Math.abs(p.tp1 - p.entry) / riskDist / 2;
       RPL.pnlR += p.bankedR;
       p.sl = p.entry;
       t(`🟢 TP1 en ${RPL.sym} @ ${fmtPrice(p.tp1)}: banca la mitad (+${p.bankedR.toFixed(2)}R) y stop a entrada`, 'up');
       RPL.markers.push({ i, y: p.tp1, type: 'tp', txt: 'TP1' });
     } else if (p.partial && hitTP2) {
-      const r2 = Math.abs(p.tp2 - p.entry) / Math.abs(p.entry - p.slOrig) / 2;
-      RPL.pnlR += r2;
-      t(`🟢🟢 TP2 en ${RPL.sym} @ ${fmtPrice(p.tp2)} (+${r2.toFixed(2)}R). Operación completa: +${(p.bankedR + r2).toFixed(2)}R`, 'up');
-      RPL.trades.push({ i, r: p.bankedR + r2 });
+      const r2 = Math.abs(p.tp2 - p.entry) / riskDist / 2;
+      t(`🟢🟢 TP2 en ${RPL.sym} @ ${fmtPrice(p.tp2)} (+${r2.toFixed(2)}R). Operación completa: +${((p.bankedR || 0) + r2).toFixed(2)}R`, 'up');
       RPL.markers.push({ i, y: p.tp2, type: 'tp', txt: 'TP2' });
-      RPL.pos = null;
+      closeTrade(p.tp2, 'Take Profit 2', (p.bankedR || 0) + r2);
     } else if (i - p.openedI > 336) {
-      t(`⏱ Cierre por tiempo en ${RPL.sym}`, 'warn');
-      RPL.trades.push({ i, r: 0 });
-      RPL.pos = null;
+      const rT = (p.bankedR || 0) + (p.partial ? 0.5 : 1) * sign * (k.c - p.entry) / riskDist;
+      t(`⏱ Cierre por tiempo en ${RPL.sym} (${rT >= 0 ? '+' : ''}${rT.toFixed(2)}R)`, 'warn');
+      closeTrade(k.c, 'Cierre por tiempo', rT);
+    } else if (p.partial) {
+      // trailing dinámico tras TP1: el stop persigue al precio a 1.2R del extremo
+      const trail = sign === 1 ? p.hi - 1.2 * riskDist : p.lo + 1.2 * riskDist;
+      if (sign * (trail - p.sl) > 0) p.sl = trail;
     }
   }
 
@@ -5226,13 +5370,13 @@ function replayStep() {
       const entry = RPL.kl[i].c;
       const sign = res.dir === 'LONG' ? 1 : -1;
       if (sign * (entry - res.plan.sl) > 0 && sign * (res.plan.tps[0].p - entry) > 0) {
-        RPL.pos = { dir: res.dir, entry, sl: res.plan.sl, slOrig: res.plan.sl, tp1: res.plan.tps[0].p, tp2: res.plan.tps[1].p, openedI: i, partial: false, bankedR: 0 };
+        RPL.pos = { dir: res.dir, entry, sl: res.plan.sl, slOrig: res.plan.sl, tp1: res.plan.tps[0].p, tp2: res.plan.tps[1].p, openedI: i, partial: false, bankedR: 0, setup: res.setup ? res.setup.name : '—', score: res.score.total, hi: entry, lo: entry };
         t(`🔎→🤖 SEÑAL ${res.dir} · ${res.setup ? res.setup.name : ''} score ${res.score.total} · entra @ ${fmtPrice(entry)} · SL ${fmtPrice(res.plan.sl)} · TP1 ${fmtPrice(res.plan.tps[0].p)}`, res.dir === 'LONG' ? 'up' : 'down');
         RPL.markers.push({ i, y: entry, type: res.dir === 'LONG' ? 'long' : 'short', txt: res.dir });
       }
     }
   }
-  replayRender();
+  if (!RPL.fast) replayRender();
 }
 
 RPL.markers = [];
@@ -5303,6 +5447,95 @@ function replayPlay() {
   RPL.timer = setInterval(replayStep, ms);
 }
 function replayPause() { RPL.playing = false; if (RPL.timer) clearInterval(RPL.timer); RPL.timer = null; }
+
+/* ---------- Simulación completa + informe ---------- */
+function replayRunAll() {
+  if (!RPL.kl.length) return;
+  replayPause();
+  const btn = $('#rpRunAll'); btn.disabled = true;
+  RPL.fast = true;
+  const chunk = () => {
+    const target = Math.min(RPL.kl.length - 1, RPL.i + 400);
+    while (RPL.i < target) replayStep();
+    if (RPL.i < RPL.kl.length - 1) { setTimeout(chunk, 0); }
+    else { RPL.fast = false; btn.disabled = false; replayRender(); replayReport(true); }
+  };
+  chunk();
+}
+
+function replayReport(scrollTo = false) {
+  const box = $('#rpReport');
+  if (!box) return;
+  const tr = RPL.trades;
+  if (!tr.length) {
+    box.style.display = '';
+    $('#rpRepChips').innerHTML = '';
+    $('#rpVerdict').innerHTML = '<div class="alert">ℹ️ <div>El motor no encontró ninguna entrada que cumpliera sus filtros en este período. Eso también es información: en mercados sin setups de calidad, el modelo elige no operar — y no operar sin ventaja es preservar capital.</div></div>';
+    $('#rpSetupTbl tbody').innerHTML = ''; $('#rpTradeTbl tbody').innerHTML = '';
+    return;
+  }
+  const wins = tr.filter(x => x.r > 0), losses = tr.filter(x => x.r <= 0);
+  const netR = tr.reduce((a, x) => a + x.r, 0);
+  const gw = wins.reduce((a, x) => a + x.r, 0), gl = Math.abs(losses.reduce((a, x) => a + x.r, 0));
+  const pf = gl > 0 ? gw / gl : (gw > 0 ? Infinity : null);
+  const longs = tr.filter(x => x.dir === 'LONG'), shorts = tr.filter(x => x.dir === 'SHORT');
+  const sumR = (a) => a.reduce((s, x) => s + x.r, 0);
+  const barsToTxt = (b) => { const h = b * (($('#rpTf').value === '1h') ? 1 : 0.25); return h >= 24 ? (h / 24).toFixed(1) + ' d' : h.toFixed(0) + ' h'; };
+  let streak = 0, maxStreak = 0;
+  for (const x of tr) { if (x.r <= 0) { streak++; maxStreak = Math.max(maxStreak, streak); } else streak = 0; }
+  // curva y drawdown en R
+  let eq = 0, peak = 0, maxDD = 0; const curve = [0];
+  for (const x of tr) { eq += x.r; curve.push(eq); peak = Math.max(peak, eq); maxDD = Math.max(maxDD, peak - eq); }
+  const chip = (lbl, val, cls = '') => `<div class="panel" style="padding:12px 14px"><div class="tiny" style="text-transform:uppercase; letter-spacing:.06em; font-weight:700">${lbl}</div><div class="num ${cls}" style="font-size:19px; font-weight:700; margin-top:3px">${val}</div></div>`;
+  $('#rpRepChips').innerHTML =
+    chip('Resultado neto', (netR >= 0 ? '+' : '') + netR.toFixed(2) + ' R', netR >= 0 ? 'up' : 'down') +
+    chip('Operaciones', `${tr.length} · ${wins.length}✓ ${losses.length}✗`) +
+    chip('Long / Short', `${longs.length}L (${sumR(longs) >= 0 ? '+' : ''}${sumR(longs).toFixed(1)}R) · ${shorts.length}S (${sumR(shorts) >= 0 ? '+' : ''}${sumR(shorts).toFixed(1)}R)`) +
+    chip('Profit factor', pf === Infinity ? '∞' : pf == null ? '—' : pf.toFixed(2), pf != null && pf >= 1.3 ? 'up' : pf != null && pf < 1 ? 'down' : '') +
+    chip('% de acierto', (wins.length / tr.length * 100).toFixed(0) + '%') +
+    chip('Expectancy', (netR / tr.length >= 0 ? '+' : '') + (netR / tr.length).toFixed(2) + ' R/op', netR >= 0 ? 'up' : 'down') +
+    chip('Peor racha', maxStreak + ' pérdidas seguidas') +
+    chip('Drawdown máx.', maxDD.toFixed(1) + ' R', 'down');
+  // por estrategia
+  const bySetup = {};
+  for (const x of tr) { (bySetup[x.setup] = bySetup[x.setup] || []).push(x); }
+  $('#rpSetupTbl tbody').innerHTML = Object.entries(bySetup).sort((a, b) => sumR(b[1]) - sumR(a[1])).map(([s, arr]) => {
+    const w = arr.filter(x => x.r > 0).length, net = sumR(arr);
+    return `<tr><td><b>${esc(s)}</b></td><td class="num">${arr.length}</td><td class="num">${(w / arr.length * 100).toFixed(0)}%</td><td class="num ${net >= 0 ? 'up' : 'down'}">${net >= 0 ? '+' : ''}${net.toFixed(2)}</td></tr>`;
+  }).join('');
+  // registro
+  const fmtT = (t) => new Date(t).toLocaleString('es-CL', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
+  $('#rpTradeTbl tbody').innerHTML = tr.map(x => `
+    <tr><td class="num">${fmtT(x.tIn)}</td><td><b class="${x.dir === 'LONG' ? 'up' : 'down'}">${x.dir}</b></td><td>${esc(x.setup)}</td>
+    <td class="num">${x.score != null ? x.score : '—'}</td><td class="num">${fmtPrice(x.entry)}</td><td class="num">${fmtPrice(x.exit)}</td>
+    <td>${esc(x.reason)}</td><td class="num">${barsToTxt(x.bars)}</td>
+    <td class="num ${x.r >= 0 ? 'up' : 'down'}"><b>${x.r >= 0 ? '+' : ''}${x.r.toFixed(2)}</b></td></tr>`).join('');
+  // curva
+  const cv = $('#rpEquity');
+  const W = cv.parentElement.clientWidth || 500, H = 180, dpr = window.devicePixelRatio || 1;
+  cv.width = W * dpr; cv.height = H * dpr; cv.style.height = H + 'px';
+  const ctx = cv.getContext('2d'); ctx.scale(dpr, dpr);
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
+  const lo = Math.min(0, ...curve), hi = Math.max(0.5, ...curve);
+  const X = (j) => 6 + j * (W - 12) / Math.max(1, curve.length - 1);
+  const Y = (v) => 8 + (hi - v) / (hi - lo || 1) * (H - 24);
+  ctx.strokeStyle = '#aeb7c6'; ctx.setLineDash([3, 4]); ctx.beginPath(); ctx.moveTo(6, Y(0)); ctx.lineTo(W - 6, Y(0)); ctx.stroke(); ctx.setLineDash([]);
+  ctx.strokeStyle = netR >= 0 ? '#0b915f' : '#d63040'; ctx.lineWidth = 2;
+  ctx.beginPath(); curve.forEach((v, j) => j ? ctx.lineTo(X(j), Y(v)) : ctx.moveTo(X(j), Y(v))); ctx.stroke();
+  ctx.lineWidth = 1; ctx.fillStyle = '#101b33'; ctx.font = '10.5px IBM Plex Mono, monospace';
+  ctx.fillText((netR >= 0 ? '+' : '') + netR.toFixed(2) + 'R', X(curve.length - 1) - 44, Y(netR) - 8);
+  // veredicto honesto
+  const days = Math.round(RPL.kl.length * (($('#rpTf').value === '1h') ? 1 : 0.25) / 24);
+  const good = pf != null && pf >= 1.3 && netR > 0 && tr.length >= 8;
+  const ok = pf != null && pf >= 1 && netR >= 0;
+  $('#rpVerdict').innerHTML = `<div class="alert ${good ? 'green' : ok ? 'blue' : ''}">${good ? '✅' : ok ? 'ℹ️' : '⚠️'} <div>
+    <b>¿Se podría haber operado esta estrategia en la realidad?</b>
+    En estos ~${days} días de ${esc(RPL.sym)}, el modelo completo de ATALAYA (score ≥ 68, mitad en TP1 + breakeven, trailing de 1.2R tras TP1, cierre por tiempo, SL primero si hay duda) habría producido <b>${tr.length} operaciones</b> con resultado <b class="${netR >= 0 ? 'up' : 'down'}">${netR >= 0 ? '+' : ''}${netR.toFixed(2)}R</b>${pf != null ? ` y profit factor <b>${pf === Infinity ? '∞' : pf.toFixed(2)}</b>` : ''}.
+    ${good ? 'Números sanos para el período — pero un solo par y un solo período no bastan: confírmalo con la <b>Matriz de Robustez</b> (¿gana también en otros pares?) y el <b>Monte Carlo</b> (¿qué drawdown es esperable?). Si las tres luces están verdes, la estrategia es defendible.' : ok ? 'Resultado neutro-positivo: operable pero sin margen de sobra. Compara con otros pares en la Matriz antes de darle capital.' : tr.length < 8 ? 'Muestra demasiado pequeña para concluir — prueba un período más largo (1H) u otro par.' : 'En este período el modelo habría perdido: eso NO significa motor roto (todo sistema tiene períodos rojos), pero sí que este par/momento no era el lugar. La Matriz de Robustez te dice si es la excepción o la regla.'}
+    <span class="tiny">Sin comisiones ni deslizamiento en el conteo en R (el backtest y la Autónoma sí los incluyen). Riesgo por operación = 1R.</span></div></div>`;
+  box.style.display = '';
+  if (scrollTo) box.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
 
 /* ---------------------------------------------------------------------
    3 · MAPA DE CALOR — el mercado completo en una imagen
@@ -5384,13 +5617,14 @@ $('#rpLoad').addEventListener('click', replayLoad);
 $('#rpPlay').addEventListener('click', replayPlay);
 $('#rpPause').addEventListener('click', replayPause);
 $('#rpStepBtn').addEventListener('click', () => { replayPause(); replayStep(); });
+$('#rpRunAll').addEventListener('click', replayRunAll);
 $('#rpSpeed').addEventListener('change', (e) => { RPL.speed = +e.target.value; if (RPL.playing) { replayPause(); replayPlay(); } });
 $('#heatGo').addEventListener('click', drawHeatmap);
 $('#heatMode').addEventListener('change', drawHeatmap);
 document.querySelectorAll('nav button').forEach(b => b.addEventListener('click', () => {
   if (b.dataset.view === 'radar') setTimeout(drawHeatmap, 80);
 }));
-window.Extras = { runMonteCarlo, replayLoad, replayStep, drawHeatmap, RPL };
+window.Extras = { runMonteCarlo, replayLoad, replayStep, replayRunAll, replayReport, drawHeatmap, RPL };
 </script>
 <script>
 /* =====================================================================
@@ -6405,6 +6639,276 @@ const Copilot = (() => {
   if (!st.seenWelcome) { unread = 1; badge(); }
 
   return { say, advise, open, close };
+})();
+</script>
+<script>
+/* =====================================================================
+   ATALAYA v13 — MODO TURBO: motor de alto riesgo (20x simulado) con
+   bolsa propia, matemática real de futuros (liquidación, comisiones) y
+   regla asimétrica: sin profit rápido → fuera; con profit → trailing.
+   Todo simulado. El Guardián Turbo es innegociable.
+   ===================================================================== */
+'use strict';
+
+const Turbo = (() => {
+  const KEY = 'atalaya_turbo';
+  const LEV = 20;                 // apalancamiento fijo
+  const TAKER = 0.0005;           // 0.05% por lado (taker futuros)
+  const LIQ_DIST = 0.045;         // ≈ 1/20 menos margen de mantenimiento
+  const MAX_SL_PCT = 0.012;       // SL nunca a más de 1.2% (24% del margen a 20x)
+  const MAX_OPEN = 2, MAX_TRADES_DAY = 10, MAX_STREAK = 4, MAX_DAY_LOSS = 0.30;
+  const MAX_HOLD_MS = 6 * 3600e3;
+
+  let TB = {
+    on: false, pot: 200, potDayStart: 200,
+    cfg: { potInit: 200, marginPct: 20, minScore: 75, scratchMin: 45 },
+    positions: [], history: [], log: [],
+    guard: { date: null, tradesToday: 0, lossStreak: 0, halted: false, reason: '' },
+  };
+  try { const s = JSON.parse(store.get(KEY) || 'null'); if (s) TB = Object.assign(TB, s); } catch (e) { }
+  let scanTimer = null, tickTimer = null, scanning = false;
+
+  const save = () => { try { TB.log = TB.log.slice(0, 80); TB.history = TB.history.slice(0, 200); store.set(KEY, JSON.stringify(TB)); } catch (e) { } };
+  const dayKey = () => new Date().toLocaleDateString('en-CA');
+  const log = (msg, cls = '') => { TB.log.unshift({ t: Date.now(), msg, cls }); save(); renderLog(); };
+  const cpSay = (html, kind, notify) => { try { if (window.Copilot) Copilot.say(html, kind, [{ label: '🤖 Ver Autónoma', act: 'view:autonoma' }], { notify }); } catch (e) { } };
+
+  /* ---------- Guardián Turbo ---------- */
+  function guardCheck() {
+    const today = dayKey();
+    if (TB.guard.date !== today) {
+      TB.guard = { date: today, tradesToday: 0, lossStreak: 0, halted: false, reason: '' };
+      TB.potDayStart = TB.pot;
+      save();
+    }
+    if (TB.guard.halted) return false;
+    const dayPnL = TB.pot - TB.potDayStart;
+    let reason = '';
+    if (dayPnL <= -MAX_DAY_LOSS * TB.potDayStart) reason = `pérdida diaria ${(dayPnL / TB.potDayStart * 100).toFixed(0)}% alcanzó el límite (−30%)`;
+    else if (TB.guard.tradesToday >= MAX_TRADES_DAY) reason = `${MAX_TRADES_DAY} operaciones: cupo diario completo`;
+    else if (TB.guard.lossStreak >= MAX_STREAK) reason = `${MAX_STREAK} pérdidas seguidas: el mercado no está para esto hoy`;
+    if (reason) {
+      TB.guard.halted = true; TB.guard.reason = reason; save();
+      log(`🛑 GUARDIÁN TURBO: motor pausado — ${reason}. Se reanuda mañana.`, 'down');
+      cpSay(`🛑 <b>Guardián Turbo</b> pausó el motor de alto riesgo: ${esc(reason)}. Las posiciones abiertas siguen gestionadas hasta su salida.`, 'cp-bad', 'Guardián Turbo: pausa por hoy');
+      renderAll();
+      return false;
+    }
+    return true;
+  }
+
+  /* ---------- apertura ---------- */
+  async function scanOnce() {
+    if (!TB.on || scanning || TB.positions.length >= MAX_OPEN || !guardCheck()) return;
+    scanning = true;
+    try {
+      const tickers = await getAllTickers();
+      const universe = tickers
+        .filter(t => t.symbol.endsWith('USDT') && !/UP|DOWN|BULL|BEAR|USDC|FDUSD|TUSD|EUR|DAI|PAX/.test(t.symbol.replace('USDT', '')))
+        .sort((a, b) => +b.quoteVolume - +a.quoteVolume).slice(0, 10)
+        .map(t => t.symbol).filter(s => !TB.positions.some(p => p.sym === s));
+      for (const sym of universe) {
+        if (TB.positions.length >= MAX_OPEN) break;
+        let res;
+        try {
+          const k15 = await getKlines(sym, '15m', 400);
+          const h1 = aggregateKlines(k15, 4).slice(-300);
+          res = E.analyzeAsset({ h4: h1, h1: k15 }, {});
+          res.__px = k15[k15.length - 1].c;
+        } catch (e) { continue; }
+        if (res.error || res.decision !== 'ENTRAR' || res.score.total < +TB.cfg.minScore) continue;
+        openPos(sym, res);
+      }
+    } catch (e) { log('⚠ Escaneo turbo falló: ' + e.message, 'down'); }
+    scanning = false;
+    renderAll();
+  }
+
+  function openPos(sym, res) {
+    const entry = res.__px || res.plan.entryHigh;
+    const sign = res.dir === 'LONG' ? 1 : -1;
+    let sl = res.plan.sl;
+    const dist = Math.abs(entry - sl) / entry;
+    if (dist > MAX_SL_PCT) { log(`✋ ${sym} ${res.dir} descartada: SL a ${(dist * 100).toFixed(2)}% — demasiado lejos para 20x (máx 1.2%).`); return; }
+    if (sign * (entry - sl) <= 0) return;
+    const margin = TB.pot * (+TB.cfg.marginPct / 100);
+    if (margin < 10 || margin > TB.pot * 0.5) { log('✋ Bolsa insuficiente para abrir con el margen configurado.'); return; }
+    const notional = margin * LEV;
+    const qty = notional / entry;
+    const liq = entry * (1 - sign * LIQ_DIST);
+    const pos = {
+      id: 'tb' + Date.now().toString(36), sym, dir: res.dir, entry, sl, slOrig: sl,
+      qty, margin, notional, liq, opened: Date.now(), score: res.score.total,
+      setup: res.setup ? res.setup.name : '—', lastPrice: entry, hi: entry, lo: entry, feeIn: notional * TAKER,
+    };
+    TB.positions.push(pos);
+    TB.guard.tradesToday++;
+    save();
+    log(`🔥 ABRE ${res.dir} ${sym} @ ${fmtPrice(entry)} · margen $${margin.toFixed(0)} × ${LEV}x = $${notional.toFixed(0)} · SL ${fmtPrice(sl)} · LIQUIDACIÓN ${fmtPrice(liq)} · score ${res.score.total}`, res.dir === 'LONG' ? 'up' : 'down');
+    cpSay(`🔥 <b>Turbo abrió</b> ${esc(sym.replace('USDT', ''))} ${esc(res.dir)} a ${LEV}x (margen $${margin.toFixed(0)}). Liquidación en ${fmtPrice(liq)}. Regla: sin profit en ${TB.cfg.scratchMin} min, se cierra sola.`, 'cp-alert', `Turbo: ${sym} ${res.dir} 20x`);
+    try { toast(`🔥 Turbo: ${sym} ${res.dir} 20x abierta`, 'blue'); } catch (e) { }
+  }
+
+  /* ---------- gestión / cierre ---------- */
+  function closePos(pos, px, reason, liquidated = false) {
+    const sign = pos.dir === 'LONG' ? 1 : -1;
+    let pnl;
+    if (liquidated) pnl = -pos.margin;
+    else pnl = pos.qty * sign * (px - pos.entry) - pos.feeIn - pos.notional * TAKER;
+    pnl = Math.max(pnl, -pos.margin); // en aislado nunca se pierde más que el margen
+    TB.pot = Math.max(0, TB.pot + pnl);
+    TB.positions = TB.positions.filter(p => p.id !== pos.id);
+    TB.guard.lossStreak = pnl <= 0 ? TB.guard.lossStreak + 1 : 0;
+    TB.history.unshift({ t: Date.now(), sym: pos.sym, dir: pos.dir, margin: pos.margin, entry: pos.entry, exit: px, pnl, reason, durMs: Date.now() - pos.opened });
+    save();
+    const up = pnl > 0;
+    log(`${liquidated ? '💀 LIQUIDADA' : up ? '✅ CIERRA' : '🔻 CIERRA'} ${pos.dir} ${pos.sym} @ ${fmtPrice(px)} → ${up ? '+' : ''}$${pnl.toFixed(2)} (${reason})`, up ? 'up' : 'down');
+    cpSay(`${liquidated ? '💀 <b>Liquidación Turbo</b>' : up ? '✅ <b>Turbo cerró con ganancia</b>' : '🔻 <b>Turbo cerró</b>'}: ${esc(pos.sym.replace('USDT', ''))} ${esc(pos.dir)} → <b class="${up ? 'up' : 'down'}">${up ? '+' : ''}$${pnl.toFixed(2)}</b>. ${esc(reason)}.${liquidated ? ' Esto a 20x es una vela en contra de 4.5% — por eso este modo vive en simulación.' : ''}`, up ? 'cp-good' : 'cp-bad', `Turbo ${pos.sym}: ${up ? '+' : ''}$${pnl.toFixed(2)}`);
+    try { toast(`Turbo ${pos.sym}: ${up ? '+' : ''}$${pnl.toFixed(2)} (${reason})`, up ? 'green' : 'red'); } catch (e) { }
+    guardCheck();
+    renderAll();
+  }
+
+  async function tick() {
+    if (!TB.positions.length) { renderStats(); return; }
+    let prices;
+    try {
+      const all = await spotGet('/api/v3/ticker/price');
+      prices = Object.fromEntries(all.map(p => [p.symbol, +p.price]));
+    } catch (e) { return; }
+    for (const pos of [...TB.positions]) {
+      const px = prices[pos.sym];
+      if (!px) continue;
+      const sign = pos.dir === 'LONG' ? 1 : -1;
+      pos.lastPrice = px;
+      pos.hi = Math.max(pos.hi, px); pos.lo = Math.min(pos.lo, px);
+      const riskDist = Math.abs(pos.entry - pos.slOrig) || 1e-9;
+      const r = sign * (px - pos.entry) / riskDist;
+      // 1) liquidación (lo primero: a 20x es lo que manda)
+      if (sign * (px - pos.liq) <= 0) { closePos(pos, pos.liq, 'Liquidación 20x', true); continue; }
+      // 2) stop
+      if (sign * (px - pos.sl) <= 0) { closePos(pos, pos.sl, sign * (pos.sl - pos.entry) > 0 ? 'Trailing stop' : 'Stop loss'); continue; }
+      // 3) regla asimétrica: sin profit rápido → fuera
+      const ageMin = (Date.now() - pos.opened) / 60000;
+      if (ageMin >= +TB.cfg.scratchMin && r < 0.1) { closePos(pos, px, `Sin profit en ${TB.cfg.scratchMin} min — capital liberado`); continue; }
+      // 4) con profit → trailing que persigue al extremo a 1R
+      if (r >= 1) {
+        const trail = sign === 1 ? pos.hi - riskDist : pos.lo + riskDist;
+        if (sign * (trail - pos.sl) > 0) pos.sl = trail;
+      }
+      // 5) tope de tiempo absoluto
+      if (Date.now() - pos.opened > MAX_HOLD_MS) { closePos(pos, px, 'Cierre por tiempo (6 h)'); continue; }
+    }
+    save();
+    renderAll();
+  }
+
+  /* ---------- on/off ---------- */
+  function start() {
+    TB.on = true; save();
+    if (scanTimer) clearInterval(scanTimer);
+    if (tickTimer) clearInterval(tickTimer);
+    scanTimer = setInterval(scanOnce, 180000);
+    tickTimer = setInterval(tick, 8000);
+    log(`▶ MODO TURBO ENCENDIDO · bolsa $${TB.pot.toFixed(0)} · margen ${TB.cfg.marginPct}%/op × 20x · score ≥ ${TB.cfg.minScore} · sin profit en ${TB.cfg.scratchMin} min → cierre. Guardián: −30% día, 10 ops, 2 posiciones, pausa tras 4 pérdidas.`, 'up');
+    scanOnce();
+    renderAll();
+  }
+  function stop() {
+    TB.on = false; save();
+    if (scanTimer) clearInterval(scanTimer); scanTimer = null;
+    log('■ Modo Turbo apagado. Las posiciones abiertas siguen gestionadas hasta salir.');
+    if (!TB.positions.length && tickTimer) { clearInterval(tickTimer); tickTimer = null; }
+    renderAll();
+  }
+
+  /* ---------- render ---------- */
+  function renderStats() {
+    const el = $('#tbStats');
+    if (!el) return;
+    const dayPnL = TB.pot - TB.potDayStart;
+    const chip = (k, v, cls = '') => `<div class="panel" style="padding:10px 12px"><div class="tiny" style="text-transform:uppercase; letter-spacing:.06em; font-weight:700">${k}</div><div class="num ${cls}" style="font-size:17px; font-weight:700">${v}</div></div>`;
+    el.innerHTML =
+      chip('Bolsa Turbo', '$' + TB.pot.toFixed(2), TB.pot >= TB.cfg.potInit ? 'up' : 'down') +
+      chip('PnL de hoy', (dayPnL >= 0 ? '+' : '') + '$' + dayPnL.toFixed(2), dayPnL >= 0 ? 'up' : 'down') +
+      chip('Ops hoy', `${TB.guard.tradesToday}/${MAX_TRADES_DAY}`) +
+      chip('Racha', TB.guard.lossStreak ? TB.guard.lossStreak + ' pérdidas ⚠' : 'limpia ✓');
+    const st = $('#tbChip');
+    if (st) st.innerHTML = TB.on
+      ? (TB.guard.halted ? '<span class="chip warn">🛑 EN PAUSA (Guardián)</span>' : '<span class="chip long" style="animation:pulse 2s infinite">● OPERANDO</span>')
+      : '<span class="chip">○ apagado</span>';
+    const gb = $('#tbGuardBanner');
+    if (gb) gb.innerHTML = TB.guard.halted ? `<div class="alert red" style="margin-bottom:12px">🛑 <div><b>Guardián Turbo:</b> ${esc(TB.guard.reason)}. El motor de alto riesgo no abrirá más hoy — se reinicia solo mañana. Esta pausa ES la estrategia: a 20x, insistir en un mal día vacía la bolsa.</div></div>` : '';
+  }
+  function renderPositions() {
+    const el = $('#tbPositions');
+    if (!el) return;
+    if (!TB.positions.length) { el.innerHTML = '<div class="tiny">Sin posiciones turbo abiertas.</div>'; return; }
+    el.innerHTML = TB.positions.map(p => {
+      const sign = p.dir === 'LONG' ? 1 : -1;
+      const rd = Math.abs(p.entry - p.slOrig) || 1e-9;
+      const r = sign * (p.lastPrice - p.entry) / rd;
+      const pnl = p.qty * sign * (p.lastPrice - p.entry) - p.feeIn;
+      const ageMin = Math.floor((Date.now() - p.opened) / 60000);
+      const scratchIn = Math.max(0, +TB.cfg.scratchMin - ageMin);
+      return `<div class="panel" style="padding:11px 13px; border-left:3px solid ${pnl >= 0 ? 'var(--long)' : 'var(--short)'}">
+        <div style="display:flex; gap:8px; align-items:baseline; flex-wrap:wrap">
+          <b>${esc(p.sym.replace('USDT', ''))}</b> <b class="${p.dir === 'LONG' ? 'up' : 'down'}">${p.dir} 20x</b>
+          <span class="num ${pnl >= 0 ? 'up' : 'down'}" style="font-weight:700">${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)} (${r >= 0 ? '+' : ''}${r.toFixed(2)}R)</span>
+        </div>
+        <div class="tiny num" style="margin-top:4px">
+          in ${fmtPrice(p.entry)} · ahora ${fmtPrice(p.lastPrice)} · SL ${fmtPrice(p.sl)} · <b class="down">liq ${fmtPrice(p.liq)}</b> · margen $${p.margin.toFixed(0)} · ${ageMin} min
+          ${r < 0.1 && !TB.guard.halted ? ` · <span class="warn">sin profit: cierre en ${scratchIn} min</span>` : r >= 1 ? ' · <span class="up">trailing activo</span>' : ''}
+        </div></div>`;
+    }).join('');
+  }
+  function renderHist() {
+    const tb = $('#tbHistTbl tbody');
+    if (!tb) return;
+    tb.innerHTML = TB.history.slice(0, 30).map(h => `<tr>
+      <td class="num">${new Date(h.t).toLocaleString('es-CL', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })}</td>
+      <td><b>${esc(h.sym.replace('USDT', ''))}</b></td><td class="${h.dir === 'LONG' ? 'up' : 'down'}">${h.dir}</td>
+      <td class="num">$${h.margin.toFixed(0)}</td><td class="tiny">${esc(h.reason)}</td>
+      <td class="num ${h.pnl >= 0 ? 'up' : 'down'}"><b>${h.pnl >= 0 ? '+' : ''}$${h.pnl.toFixed(2)}</b></td></tr>`).join('')
+      || '<tr><td colspan="6" class="tiny">Sin operaciones aún.</td></tr>';
+  }
+  function renderLog() {
+    const el = $('#tbLog');
+    if (!el) return;
+    el.innerHTML = TB.log.slice(0, 40).map(l => `<div class="tiny" style="padding:3px 0; border-bottom:1px solid var(--line-2)"><span class="num">${new Date(l.t).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}</span> <span class="${l.cls}">${l.msg}</span></div>`).join('');
+  }
+  function renderAll() { renderStats(); renderPositions(); renderHist(); renderLog(); }
+
+  /* ---------- wiring ---------- */
+  (function wire() {
+    const tg = $('#tbToggle');
+    if (!tg) return;
+    tg.checked = TB.on;
+    $('#tbPot').value = TB.cfg.potInit;
+    $('#tbMarginPct').value = String(TB.cfg.marginPct);
+    $('#tbMinScore').value = String(TB.cfg.minScore);
+    $('#tbScratchMin').value = String(TB.cfg.scratchMin);
+    tg.addEventListener('change', () => {
+      if (tg.checked) {
+        const v = +$('#tbPot').value || 200;
+        if (!TB.history.length && !TB.positions.length) { TB.pot = v; TB.potDayStart = v; }
+        TB.cfg.potInit = v;
+        TB.cfg.marginPct = +$('#tbMarginPct').value;
+        TB.cfg.minScore = +$('#tbMinScore').value;
+        TB.cfg.scratchMin = +$('#tbScratchMin').value;
+        start();
+      } else stop();
+    });
+    ['tbMarginPct', 'tbMinScore', 'tbScratchMin'].forEach(id => $('#' + id).addEventListener('change', () => {
+      TB.cfg.marginPct = +$('#tbMarginPct').value; TB.cfg.minScore = +$('#tbMinScore').value; TB.cfg.scratchMin = +$('#tbScratchMin').value; save();
+    }));
+    renderAll();
+    // persistencia: si estaba encendido, se reanuda solo tras recargar
+    if (TB.on) setTimeout(() => { start(); log('🔄 Modo Turbo reanudado tras recargar la página.', 'up'); }, 3000);
+    else if (TB.positions.length) tickTimer = setInterval(tick, 8000); // gestiona lo abierto aunque esté apagado
+  })();
+
+  return { state: () => TB, scanOnce, tick, start, stop, renderAll, openPos, closePos };
 })();
 </script>
 </body>
